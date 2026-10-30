@@ -1,0 +1,16 @@
+# Image Builder: downloaded and extracted by build.sh
+/imagebuilder-dl/
+/imagebuilder-*/
+*.part
+
+# Build output
+/out/
+build.log
+
+# Release images
+/releases/
+
+# Editor and OS leftovers
+*~
+*.swp
+.DS_Store

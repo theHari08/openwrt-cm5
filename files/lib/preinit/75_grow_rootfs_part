@@ -1,0 +1,89 @@
+# Grow the root partition to the end of the disk before mount_root creates the
+# overlay, so rootfs_data (the writable overlay) spans the whole disk.
+#
+# Only the 4-byte size field of the root partition's MBR entry is rewritten:
+# the disk ID (and with it root=PARTUUID=...) stays the same. Does nothing when
+# the partition already fills the disk, so it is a no-op on every later boot.
+
+grow_rootfs_log() {
+	echo "grow_rootfs: $*" > /dev/kmsg
+}
+
+grow_rootfs_le32() {
+	local v="$1" i
+
+	for i in 0 8 16 24; do
+		printf "\\$(printf '%03o' $(( (v >> i) & 255 )))"
+	done
+}
+
+grow_rootfs_read_u32() {
+	dd if="$1" bs=1 skip="$2" count=4 2>/dev/null | hexdump -v -e '1/4 "%u"'
+}
+
+grow_rootfs_part() {
+	local majmin sys partn part disk dsys start size disksize end newsize off p
+
+	[ "$FAILSAFE" = "true" ] && return 0
+
+	majmin="$(awk '$5 == "/" { print $3; exit }' /proc/self/mountinfo)"
+	sys="/sys/dev/block/$majmin"
+	[ -n "$majmin" ] && [ -f "$sys/partition" ] || return 0
+
+	partn="$(cat "$sys/partition")"
+	part="$(basename "$(readlink -f "$sys")")"
+	disk="$(basename "$(readlink -f "$sys/..")")"
+	dsys="/sys/class/block/$disk"
+	[ -b "/dev/$disk" ] && [ "$partn" -ge 1 ] && [ "$partn" -le 4 ] || return 0
+
+	start="$(cat "$sys/start")"
+	size="$(cat "$sys/size")"
+	disksize="$(cat "$dsys/size")"
+
+	# the root partition must be the last one on the disk
+	for p in "$dsys"/*/partition; do
+		p="${p%/partition}"
+		[ "$(cat "$p/start")" -gt "$start" ] && return 0
+	done
+
+	# plain MBR only (no GPT protective entry)
+	[ "$(dd if="/dev/$disk" bs=1 skip=510 count=2 2>/dev/null | hexdump -v -e '2/1 "%02x"')" = "55aa" ] || return 0
+	[ "$(dd if="/dev/$disk" bs=1 skip=450 count=1 2>/dev/null | hexdump -v -e '1/1 "%02x"')" = "ee" ] && return 0
+
+	off=$(( 446 + (partn - 1) * 16 ))
+	if [ "$(grow_rootfs_read_u32 "/dev/$disk" $(( off + 8 )))" != "$start" ] ||
+	   [ "$(grow_rootfs_read_u32 "/dev/$disk" $(( off + 12 )))" != "$size" ]; then
+		grow_rootfs_log "MBR entry for $part does not match the kernel, not touching it"
+		return 0
+	fi
+
+	# end on a 4 MiB boundary; skip unless there is at least 64 MiB to gain
+	end=$(( disksize / 8192 * 8192 ))
+	newsize=$(( end - start ))
+	[ "$newsize" -gt $(( size + 131072 )) ] || return 0
+	[ "$newsize" -le 4294967295 ] || newsize=$(( 4294967295 / 8192 * 8192 - start ))
+
+	# encode and check the new size before anything is written to the disk
+	grow_rootfs_le32 "$newsize" > /tmp/.grow_rootfs
+	if [ "$(wc -c < /tmp/.grow_rootfs)" -ne 4 ] ||
+	   [ "$(grow_rootfs_read_u32 /tmp/.grow_rootfs 0)" != "$newsize" ]; then
+		grow_rootfs_log "could not encode the new partition size"
+		rm -f /tmp/.grow_rootfs
+		return 0
+	fi
+
+	grow_rootfs_log "growing /dev/$part from $size to $newsize sectors"
+	dd if=/tmp/.grow_rootfs of="/dev/$disk" bs=1 seek=$(( off + 12 )) count=4 conv=notrunc 2>/dev/null
+	rm -f /tmp/.grow_rootfs
+	sync
+
+	if [ "$(grow_rootfs_read_u32 "/dev/$disk" $(( off + 12 )))" != "$newsize" ]; then
+		grow_rootfs_log "MBR write verification failed"
+		return 0
+	fi
+
+	partx -u -n "$partn" "/dev/$disk" 2>/dev/null
+	grow_rootfs_log "kernel now sees $(cat "$sys/size") sectors for /dev/$part"
+}
+
+boot_hook_add preinit_main grow_rootfs_part

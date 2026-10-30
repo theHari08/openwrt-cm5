@@ -1,0 +1,68 @@
+#!/bin/sh
+# Router defaults for the CM5-DUAL-ETH-BOX-B. Runs on first boot and after
+# every factory reset.
+#   eth1 (2.5GbE) = lan, 192.168.50.1/24, DHCP server
+#   eth0 (1GbE)   = wan, DHCP client
+#   usb0          = wanusb, phone USB tethering, mwan3 failover (/etc/config/mwan3)
+# IPv4 only by default: wan6 exists but is not started, no RA/DHCPv6 on lan.
+
+uci set system.@system[0].hostname='openwrt-cm5'
+uci commit system
+
+# --- lan on the 2.5GbE port ---
+br="$(uci show network | sed -n "s/^network\.\(@device\[[0-9]*\]\)\.name='br-lan'$/\1/p" | head -n1)"
+if [ -z "$br" ]; then
+	br="$(uci add network device)"
+	uci set network.$br.name='br-lan'
+	uci set network.$br.type='bridge'
+fi
+uci -q delete network.$br.ports
+uci add_list network.$br.ports='eth1'
+uci set network.lan=interface
+uci set network.lan.device='br-lan'
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='192.168.50.1'
+uci set network.lan.netmask='255.255.255.0'
+uci -q delete network.lan.ip6assign
+
+# --- wan on the 1GbE port, phone tethering as backup ---
+uci set network.wan=interface
+uci set network.wan.device='eth0'
+uci set network.wan.proto='dhcp'
+uci set network.wan.metric='10'
+
+uci set network.wan6=interface
+uci set network.wan6.device='eth0'
+uci set network.wan6.proto='dhcpv6'
+uci set network.wan6.auto='0'
+
+uci set network.wanusb=interface
+uci set network.wanusb.device='usb0'
+uci set network.wanusb.proto='dhcp'
+uci set network.wanusb.metric='20'
+uci commit network
+
+# --- DHCP: IPv4 server on lan only ---
+uci set dhcp.lan=dhcp
+uci set dhcp.lan.interface='lan'
+uci set dhcp.lan.ignore='0'
+uci set dhcp.lan.dhcpv4='server'
+uci set dhcp.lan.dhcpv6='disabled'
+uci set dhcp.lan.ra='disabled'
+uci set dhcp.wan=dhcp
+uci set dhcp.wan.interface='wan'
+uci set dhcp.wan.ignore='1'
+uci set dhcp.wanusb=dhcp
+uci set dhcp.wanusb.interface='wanusb'
+uci set dhcp.wanusb.ignore='1'
+uci commit dhcp
+
+# --- firewall: tethering is part of the wan zone (NAT, inbound blocked) ---
+zone="$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='wan'$/\1/p" | head -n1)"
+if [ -n "$zone" ]; then
+	uci -q del_list firewall.$zone.network='wanusb'
+	uci add_list firewall.$zone.network='wanusb'
+	uci commit firewall
+fi
+
+exit 0
