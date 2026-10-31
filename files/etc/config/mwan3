@@ -12,6 +12,8 @@ config interface 'wan'
 	option interval '5'
 	option down '3'
 	option up '3'
+	list flush_conntrack 'connected'
+	list flush_conntrack 'disconnected'
 
 config interface 'wanusb'
 	option enabled '1'
