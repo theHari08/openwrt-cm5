@@ -20,7 +20,8 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | Status LED | Green on with the wan link and blinking with wan traffic. Green blinking with the backup uplink's traffic when only a backup has internet. **Red fast blink when no uplink has internet.** Driven by mwan3's tracking ([`cm5-status-led`](files/usr/libexec/cm5-status-led)) |
 | UPnP / NAT-PMP | Installed but off. Turn it on in Services -> UPnP IGD & PCP if a console or app needs it |
 | Tailscale | Installed but not started. See [Tailscale](#tailscale) |
-| Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe) |
+| Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe), and the CM5's USB 2.0 OTG controller in host mode (`dtoverlay=dwc2,dr_mode=host`) |
+| USB ports | The blue USB 3.0 port is on the RP1's first USB controller. The 2.5GbE NIC (eth1) is soldered to the second one. The black USB 2.0 port is wired through a USB switch to the CM5's own USB 2.0 OTG controller, which is also what the USB-C port uses for flashing in BOOT mode. OpenWrt leaves that controller off, so the image turns it on in host mode with `kmod-usb-dwc2`. Without that, the black port gives no power and sees nothing |
 | Power button | A short press of PSW does a clean poweroff; a press while off powers on |
 | Storage | [`75_grow_rootfs_part`](files/lib/preinit/75_grow_rootfs_part) grows partition 2 to the end of the eMMC before the overlay is created, so the f2fs overlay spans the whole eMMC (about 29 GB on a 32 GB CM5) |
 
@@ -62,7 +63,7 @@ Each run does the following:
 1. Fetches the release's `sha256sums` and its signature `sha256sums.asc` once, into `imagebuilder-dl/<version>/`. The source is the [target download folder](https://downloads.openwrt.org/releases/25.12.6/targets/bcm27xx/bcm2712/) of that release. On every run it checks the signature with `gpgv` against the keys in [`keys/`](keys). If the signature is bad or from an unknown key, it deletes both files and stops.
 2. Verifies the archive against `sha256sums`. It downloads the archive only if it is missing or corrupt. If a fresh download does not match, the run stops.
 3. Extracts the archive to `imagebuilder-<version>/` if that folder does not exist yet.
-4. Appends the Wi-Fi/BT-off and PCIe Gen3 lines to the boot `config.txt` once, and builds squashfs images only.
+4. Appends the Wi-Fi/BT-off, PCIe Gen3 and USB 2.0 host-mode lines to the boot `config.txt` once, and builds squashfs images only.
 5. Empties `out/` and runs `make image` with the package list, `files/`, `ROOTFS_PARTSIZE=512` and `EXTRA_IMAGE_NAME=cm5router`. The output goes to `out/`.
 6. With `--release`, saves the build to `releases/YYYY-MM-DD-HHMM/` and verifies the checksums there (see [Save a release](#save-a-release)).
 
