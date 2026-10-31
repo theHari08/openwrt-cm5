@@ -1,0 +1,20 @@
+#
+# CM5-DUAL-ETH-BOX-B: the 2.5GbE port (eth1) is lan and the 1GbE port (eth0)
+# is wan. The stock bcm27xx board script only knows eth0 as lan, which also
+# leaves eth1 out of LuCI's port status.
+#
+
+. /lib/functions/uci-defaults.sh
+. /lib/functions.sh
+
+board_config_update
+
+case "$(board_name)" in
+raspberrypi,5-compute-module)
+	ucidef_set_interfaces_lan_wan "eth1" "eth0"
+	;;
+esac
+
+board_config_flush
+
+exit 0
