@@ -2,10 +2,13 @@
 #
 # Mount NVMe and USB storage automatically:
 #   NVMe        -> /mnt/nvme   (more partitions: /mnt/nvme-2, /mnt/nvme-3, ...)
-#   USB drives  -> /mnt/usb0, /mnt/usb1, ... in the order they are plugged in
-#                  (more partitions on one drive: /mnt/usb0-2, ...)
-# A drive with an enabled fstab entry (LuCI -> System -> Mount Points) is left to
-# block-mount, which has already mounted it by the time this runs (10-mount).
+#   USB drives  -> /mnt/<label>, from the filesystem label or else the GPT
+#                  partition name, so a labelled drive always gets the same path.
+#                  Without either: /mnt/usb0, /mnt/usb1, ... in plug-in order
+#                  (more partitions on one drive: /mnt/usb0-2, ...).
+# A name already in use gets -2, -3, ... appended. A drive with an enabled fstab
+# entry (LuCI -> System -> Mount Points) is left to block-mount, which has already
+# mounted it by the time this runs (10-mount).
 
 STATE=/var/run/automount
 
@@ -16,8 +19,38 @@ automount_kind() {
 	esac
 }
 
+# a label as a safe directory name: letters, digits, . _ - only, never hidden
+automount_name() {
+	local name
+
+	name="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-48)"
+	case "$name" in
+	.*) name="_$name" ;;
+	esac
+	echo "$name"
+}
+
+# an empty, unmounted directory is free: /mnt is on flash, so a power cut can
+# leave the directory of an earlier mount behind
+automount_in_use() {
+	[ -e "$1" ] || return 1
+	[ -d "$1" ] && ! grep -q " $1 " /proc/mounts && [ -z "$(ls -A "$1")" ] && return 1
+	return 0
+}
+
+# first of /mnt/NAME, /mnt/NAME-2, ... that is not in use
+automount_free() {
+	local mp="/mnt/$1" n=2
+
+	while automount_in_use "$mp"; do
+		mp="/mnt/$1-$n"
+		n=$((n + 1))
+	done
+	echo "$mp"
+}
+
 automount_add() {
-	local disk kind partn type fstype opts base idx mp
+	local disk kind partn info type label fstype opts name idx mp
 
 	grep -q "^/dev/$DEVNAME " /proc/mounts && return 0
 
@@ -31,7 +64,8 @@ automount_add() {
 	kind="$(automount_kind "$disk")"
 	[ -n "$kind" ] || return 0
 
-	type="$(block info "/dev/$DEVNAME" | sed -n 's/.* TYPE="\([^"]*\)".*/\1/p')"
+	info="$(block info "/dev/$DEVNAME")"
+	type="$(echo "$info" | sed -n 's/.* TYPE="\([^"]*\)".*/\1/p')"
 	case "$type" in
 	ext2|ext3|ext4|f2fs) fstype="$type"; opts=noatime ;;
 	vfat) fstype=vfat; opts=noatime,utf8 ;;
@@ -43,29 +77,34 @@ automount_add() {
 	mkdir -p "$STATE"
 	lock "$STATE.lock"
 	if [ "$kind" = nvme ]; then
-		base=/mnt/nvme
+		name=nvme
+		[ "$partn" -gt 1 ] && name="nvme-$partn"
 	else
-		idx="$(cat "$STATE/disk.$disk" 2>/dev/null)"
-		if [ -z "$idx" ]; then
-			idx=0
-			while [ -e "$STATE/usb$idx" ]; do idx=$((idx + 1)); done
-			echo "$disk" > "$STATE/usb$idx"
-			echo "$idx" > "$STATE/disk.$disk"
+		label="$(echo "$info" | sed -n 's/.* LABEL="\([^"]*\)".*/\1/p')"
+		[ -n "$label" ] || label="$(sed -n 's/^PARTNAME=//p' "/sys/class/block/$DEVNAME/uevent")"
+		name="$(automount_name "$label")"
+		if [ -z "$name" ]; then
+			idx="$(cat "$STATE/disk.$disk" 2>/dev/null)"
+			if [ -z "$idx" ]; then
+				idx=0
+				while [ -e "$STATE/usb$idx" ]; do idx=$((idx + 1)); done
+				echo "$disk" > "$STATE/usb$idx"
+				echo "$idx" > "$STATE/disk.$disk"
+			fi
+			name="usb$idx"
+			[ "$partn" -gt 1 ] && name="usb$idx-$partn"
 		fi
-		base="/mnt/usb$idx"
 	fi
+	mp="$(automount_free "$name")"
+	mkdir -p "$mp"
+	echo "$mp" > "$STATE/mnt.$DEVNAME"
 	lock -u "$STATE.lock"
 
-	if [ "$partn" -gt 1 ]; then
-		mp="$base-$partn"
-	else
-		mp="$base"
-	fi
-	mkdir -p "$mp"
 	if mount -t "$fstype" -o "$opts" "/dev/$DEVNAME" "$mp"; then
 		logger -t automount "mounted /dev/$DEVNAME ($type) on $mp"
 	else
 		rmdir "$mp" 2>/dev/null
+		rm -f "$STATE/mnt.$DEVNAME"
 		logger -t automount "could not mount /dev/$DEVNAME ($type)"
 	fi
 }
@@ -73,13 +112,13 @@ automount_add() {
 automount_remove() {
 	local mp idx
 
-	mp="$(awk -v dev="/dev/$DEVNAME" '$1 == dev { print $2; exit }' /proc/mounts)"
-	case "$mp" in
-	/mnt/nvme*|/mnt/usb*)
-		umount -l "$mp" && rmdir "$mp" 2>/dev/null
+	mp="$(cat "$STATE/mnt.$DEVNAME" 2>/dev/null)"
+	if [ -n "$mp" ]; then
+		grep -q " $mp " /proc/mounts && umount -l "$mp"
+		rmdir "$mp" 2>/dev/null
+		rm -f "$STATE/mnt.$DEVNAME"
 		logger -t automount "unmounted $mp"
-		;;
-	esac
+	fi
 
 	if [ "$DEVTYPE" = disk ] && [ -f "$STATE/disk.$DEVNAME" ]; then
 		idx="$(cat "$STATE/disk.$DEVNAME")"
