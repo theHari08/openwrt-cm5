@@ -8,9 +8,20 @@
 #     eth2  = wanusbeth, iPhone USB tethering, a USB Ethernet adapter or an LTE stick in HiLink mode
 #     wwan0 = wwan, an LTE modem in QMI or MBIM mode (auto-detected; set the APN if the carrier needs one)
 # IPv4 only by default: wan6 exists but is not started, no RA/DHCPv6 on lan.
+# SSH is off by default: LuCI -> System -> Administration -> SSH Access -> Enable Instance.
+#
+# OpenWrt runs uci-defaults again after a sysupgrade that keeps settings. The
+# marker below comes back with the restored /etc/config/system, so the user's
+# own settings are never overwritten; only a fresh flash or factory reset applies these.
+
+[ "$(uci -q get system.@system[0].cm5router_defaults)" = 1 ] && exit 0
 
 uci set system.@system[0].hostname='openwrt-cm5'
 uci commit system
+
+# --- SSH off until the user enables it in LuCI ---
+uci set dropbear.@dropbear[0].enable='0'
+uci commit dropbear
 
 # --- lan on the 2.5GbE port ---
 br="$(uci show network | sed -n "s/^network\.\(@device\[[0-9]*\]\)\.name='br-lan'$/\1/p" | head -n1)"
@@ -100,5 +111,8 @@ if [ -f /etc/config/nlbwmon ]; then
 	uci set nlbwmon.@nlbwmon[0].database_directory='/etc/nlbwmon'
 	uci commit nlbwmon
 fi
+
+uci set system.@system[0].cm5router_defaults='1'
+uci commit system
 
 exit 0
