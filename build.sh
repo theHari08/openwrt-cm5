@@ -88,9 +88,10 @@ else
 	mv "$IB.tmp" "$IB"
 fi
 
-# Boot partition: Wi-Fi/BT off in hardware, M.2 slot at PCIe Gen3
+# Boot partition: Wi-Fi/BT off in hardware, M.2 slot at PCIe Gen3, and the CM5's
+# USB 2.0 OTG controller in host mode, which drives the box's USB 2.0 Type-A port
 CFG="$IB/target/linux/bcm27xx/image/config.txt"
-for line in dtoverlay=disable-wifi-pi5 dtoverlay=disable-bt-pi5 dtparam=pciex1_gen=3; do
+for line in dtoverlay=disable-wifi-pi5 dtoverlay=disable-bt-pi5 dtparam=pciex1_gen=3 dtoverlay=dwc2,dr_mode=host; do
 	grep -qx "$line" "$CFG" || echo "$line" >> "$CFG"
 done
 
@@ -103,7 +104,7 @@ PACKAGES="
 	kmod-fs-vfat kmod-hwmon-pwmfan kmod-i2c-bcm2835 kmod-i2c-brcmstb kmod-i2c-designware-platform
 	kmod-nft-offload kmod-nls-cp437 kmod-nls-iso8859-1 kmod-r8169 kmod-sound-arm-bcm2835
 	kmod-sound-core kmod-spi-bcm2835 kmod-spi-dw-mmio kmod-thermal kmod-usb-hid
-	kmod-gpio-button-hotplug
+	kmod-gpio-button-hotplug kmod-usb-dwc2
 	kmod-usb-net-lan78xx kmod-usb-net-rtl8152 libc libgcc libustream-mbedtls logd mkf2fs mtd
 	netifd nftables odhcp6c odhcpd-ipv6only partx-utils ppp ppp-mod-pppoe procd-ujail uci
 	uclient-fetch urandom-seed
