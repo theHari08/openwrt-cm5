@@ -113,6 +113,7 @@ PACKAGES="
 	kmod-wireguard wireguard-tools luci-proto-wireguard qrencode tailscale luci-app-tailscale-community kmod-tun
 	block-mount kmod-fs-ext4 resize2fs parted losetup lsblk nvme-cli smartmontools kmod-usb-storage
 	kmod-fs-exfat kmod-fs-ntfs3
+	luci-app-upnp
 	kmod-usb-net-rndis kmod-usb-net-cdc-ether kmod-usb-net-cdc-ncm kmod-usb-net-cdc-mbim
 	kmod-usb-net-qmi-wwan kmod-usb-net-huawei-cdc-ncm kmod-usb-net-ipheth kmod-usb-net-asix
 	kmod-usb-net-asix-ax88179 kmod-usb-net-rtl8150 kmod-usb-serial-option usb-modeswitch uqmi umbim

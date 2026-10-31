@@ -114,6 +114,12 @@ if [ -f /etc/config/nlbwmon ]; then
 	uci commit nlbwmon
 fi
 
+# --- UPnP/NAT-PMP installed but off: LuCI -> Services -> UPnP IGD & PCP ---
+if [ -f /etc/config/upnpd ]; then
+	uci set upnpd.config.enabled='0'
+	uci commit upnpd
+fi
+
 uci set system.@system[0].cm5router_defaults='1'
 uci commit system
 
