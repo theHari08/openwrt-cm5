@@ -78,4 +78,27 @@ if [ -n "$zone" ]; then
 	uci commit firewall
 fi
 
+# --- SQM (cake) on wan, off until the line speeds are set: LuCI -> Network -> SQM QoS ---
+if [ -f /etc/config/sqm ]; then
+	q="$(uci show sqm | sed -n "s/^sqm\.\([^.=]*\)=queue$/\1/p" | head -n1)"
+	if [ -z "$q" ]; then
+		q="$(uci add sqm queue)"
+	fi
+	[ "$q" = wan ] || uci rename sqm.$q='wan'
+	uci set sqm.wan.enabled='0'
+	uci set sqm.wan.interface='eth0'
+	uci set sqm.wan.qdisc='cake'
+	uci set sqm.wan.script='piece_of_cake.qos'
+	uci set sqm.wan.download='0'
+	uci set sqm.wan.upload='0'
+	uci commit sqm
+fi
+
+# --- traffic stats: keep the nlbwmon database on flash instead of RAM ---
+if [ -f /etc/config/nlbwmon ]; then
+	mkdir -p /etc/nlbwmon
+	uci set nlbwmon.@nlbwmon[0].database_directory='/etc/nlbwmon'
+	uci commit nlbwmon
+fi
+
 exit 0

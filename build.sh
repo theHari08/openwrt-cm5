@@ -114,6 +114,7 @@ PACKAGES="
 	kmod-usb-net-qmi-wwan kmod-usb-net-huawei-cdc-ncm kmod-usb-net-ipheth kmod-usb-net-asix
 	kmod-usb-net-asix-ax88179 kmod-usb-net-rtl8150 kmod-usb-serial-option usb-modeswitch uqmi umbim
 	usbmuxd libimobiledevice-utils luci-proto-qmi luci-proto-mbim
+	sqm-scripts luci-app-sqm
 	nlbwmon luci-app-nlbwmon
 	htop iperf3 ethtool tcpdump curl
 "
