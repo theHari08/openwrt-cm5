@@ -15,6 +15,11 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | SSH | Off. Turn it on in LuCI after first boot (see [After installing](#after-installing)) |
 | SQM | [Cake](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm) set up on eth0 but disabled until you enter your line speeds |
 | Traffic stats | nlbwmon keeps its database in `/etc/nlbwmon` on flash, so per-device usage survives reboots and sysupgrades. It writes once a day and stays small |
+| DNS | dnsmasq asks Cloudflare (1.1.1.1, 1.0.0.1) as well as the DNS servers the uplink hands out, so names still resolve while a backup uplink is in use |
+| Storage | NVMe and USB drives are mounted automatically at `/mnt/nvme`, `/mnt/usb0`, `/mnt/usb1`, ... See [USB and NVMe storage](#usb-and-nvme-storage) |
+| Status LED | Green on with the wan link and blinking with wan traffic. Green blinking with the backup uplink's traffic when only a backup has internet. **Red fast blink when no uplink has internet.** Driven by mwan3's tracking ([`cm5-status-led`](files/usr/libexec/cm5-status-led)) |
+| UPnP / NAT-PMP | Installed but off. Turn it on in Services -> UPnP IGD & PCP if a console or app needs it |
+| Tailscale | Installed but not started. See [Tailscale](#tailscale) |
 | Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe) |
 | Power button | A short press of PSW does a clean poweroff; a press while off powers on |
 | Storage | [`75_grow_rootfs_part`](files/lib/preinit/75_grow_rootfs_part) grows partition 2 to the end of the eMMC before the overlay is created, so the f2fs overlay spans the whole eMMC (about 29 GB on a 32 GB CM5) |
@@ -128,7 +133,7 @@ The eMMC is a new `usb` disk whose size matches your CM5's eMMC (16, 32 or 64 GB
 
 ## Backup uplinks
 
-When wan stops reaching the internet, mwan3 moves traffic to the first backup uplink that is online and moves it back when wan recovers. It checks each uplink by pinging 1.1.1.1, 8.8.8.8 and 9.9.9.9 every 5 seconds. Status -> MultiWAN Manager in LuCI shows which uplink is in use. More on USB uplinks in the OpenWrt wiki: [smartphone USB tethering](https://openwrt.org/docs/guide-user/network/wan/smartphone.usb.tethering) and [WWAN](https://openwrt.org/docs/guide-user/network/wan/wwan/start).
+When wan stops reaching the internet, mwan3 moves traffic to the first backup uplink that is online and moves it back when wan recovers. It checks each uplink by pinging 1.1.1.1, 8.8.8.8 and 9.9.9.9 every 5 seconds. Each time wan goes offline or comes back, the router clears its connection table (`flush_conntrack`), so open connections reconnect straight away over the uplink now in use instead of hanging on the old one. A video call or download in progress restarts once at that moment. Status -> MultiWAN Manager in LuCI shows which uplink is in use. More on USB uplinks in the OpenWrt wiki: [smartphone USB tethering](https://openwrt.org/docs/guide-user/network/wan/smartphone.usb.tethering) and [WWAN](https://openwrt.org/docs/guide-user/network/wan/wwan/start).
 
 | Uplink | Device | What to plug in | Setup |
 | --- | --- | --- | --- |
@@ -137,6 +142,30 @@ When wan stops reaching the internet, mwan3 moves traffic to the first backup up
 | `wwan` | wwan0 | LTE modem in QMI or MBIM mode | Auto-detected. If the carrier needs an APN or the SIM has a PIN, run `uci set network.wwan.apn='your.apn'` (and `network.wwan.pincode`), then `uci commit network; ifup wwan`. LuCI shows the `wwan` protocol as unsupported, but you can switch the interface to the QMI or MBIM protocol there and fill in the APN |
 
 eth2 is the next free Ethernet name. If you plug in more than one USB Ethernet device, only the one that comes up as eth2 is used as a backup uplink. See the [QMI/MBIM dongle guide](https://openwrt.org/docs/guide-user/network/wan/wwan/ltedongle) for modems that start in USB storage mode (`usb-modeswitch` is included).
+
+## USB and NVMe storage
+
+[`20-automount`](files/etc/hotplug.d/block/20-automount) mounts drives as soon as they appear, including drives that are already connected at boot:
+
+| Drive | Mount point |
+| --- | --- |
+| NVMe in the M.2 slot | `/mnt/nvme`; further partitions at `/mnt/nvme-2`, `/mnt/nvme-3`, ... |
+| USB drives | `/mnt/usb0`, `/mnt/usb1`, ... in the order they are plugged in; further partitions on the same drive at `/mnt/usb0-2`, ... |
+
+Supported filesystems are ext2/3/4, f2fs, FAT, exFAT and NTFS. Anything else, including an empty or unformatted drive, is left alone, and so is the eMMC.
+
+- **USB names follow plug-in order.** The same stick can be `usb0` today and `usb1` after a reboot, depending on what else is plugged in. That is fine for copying files. For a drive that something depends on, such as backups or container data, add a mount point by UUID in LuCI (System -> Mount Points) with its own path. A drive with an enabled mount point there is mounted by OpenWrt's `block-mount` instead and left alone here. `/mnt/nvme` is always the same drive, since the box has only one M.2 slot.
+- **Unmount before unplugging** to avoid losing data: `umount /mnt/usb0`, or the Unmount button in System -> Mount Points.
+- `logread | grep automount` shows what was mounted or skipped.
+
+## Tailscale
+
+Tailscale is installed but does not run until you set it up, so it costs nothing for those who do not use it.
+
+1. In LuCI, go to System -> Startup, then Enable and Start `tailscale`. Or over SSH, run `/etc/init.d/tailscale enable && /etc/init.d/tailscale start`.
+2. Run `tailscale up` over SSH and open the login link it prints. The Tailscale page under Services can be used for the rest.
+
+[`95-tailscale-autostart`](files/etc/uci-defaults/95-tailscale-autostart) runs on first boot and again after every sysupgrade. It keeps Tailscale enabled once its state file exists (the file is kept across sysupgrades), and off otherwise.
 
 ## Optional hardware: fan and RTC battery
 
