@@ -3,7 +3,10 @@
 # every factory reset.
 #   eth1 (2.5GbE) = lan, 192.168.50.1/24, DHCP server
 #   eth0 (1GbE)   = wan, DHCP client
-#   usb0          = wanusb, phone USB tethering, mwan3 failover (/etc/config/mwan3)
+#   backup uplinks, tried in this order by mwan3 (/etc/config/mwan3):
+#     usb0  = wanusb, Android USB tethering
+#     eth2  = wanusbeth, iPhone USB tethering, a USB Ethernet adapter or an LTE stick in HiLink mode
+#     wwan0 = wwan, an LTE modem in QMI or MBIM mode (auto-detected; set the APN if the carrier needs one)
 # IPv4 only by default: wan6 exists but is not started, no RA/DHCPv6 on lan.
 
 uci set system.@system[0].hostname='openwrt-cm5'
@@ -25,7 +28,7 @@ uci set network.lan.ipaddr='192.168.50.1'
 uci set network.lan.netmask='255.255.255.0'
 uci -q delete network.lan.ip6assign
 
-# --- wan on the 1GbE port, phone tethering as backup ---
+# --- wan on the 1GbE port, USB uplinks as backups ---
 uci set network.wan=interface
 uci set network.wan.device='eth0'
 uci set network.wan.proto='dhcp'
@@ -40,6 +43,15 @@ uci set network.wanusb=interface
 uci set network.wanusb.device='usb0'
 uci set network.wanusb.proto='dhcp'
 uci set network.wanusb.metric='20'
+
+uci set network.wanusbeth=interface
+uci set network.wanusbeth.device='eth2'
+uci set network.wanusbeth.proto='dhcp'
+uci set network.wanusbeth.metric='30'
+
+uci set network.wwan=interface
+uci set network.wwan.proto='wwan'
+uci set network.wwan.metric='40'
 uci commit network
 
 # --- DHCP: IPv4 server on lan only ---
@@ -49,19 +61,20 @@ uci set dhcp.lan.ignore='0'
 uci set dhcp.lan.dhcpv4='server'
 uci set dhcp.lan.dhcpv6='disabled'
 uci set dhcp.lan.ra='disabled'
-uci set dhcp.wan=dhcp
-uci set dhcp.wan.interface='wan'
-uci set dhcp.wan.ignore='1'
-uci set dhcp.wanusb=dhcp
-uci set dhcp.wanusb.interface='wanusb'
-uci set dhcp.wanusb.ignore='1'
+for iface in wan wanusb wanusbeth wwan; do
+	uci set dhcp.$iface=dhcp
+	uci set dhcp.$iface.interface="$iface"
+	uci set dhcp.$iface.ignore='1'
+done
 uci commit dhcp
 
-# --- firewall: tethering is part of the wan zone (NAT, inbound blocked) ---
+# --- firewall: the backup uplinks are part of the wan zone (NAT, inbound blocked) ---
 zone="$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='wan'$/\1/p" | head -n1)"
 if [ -n "$zone" ]; then
-	uci -q del_list firewall.$zone.network='wanusb'
-	uci add_list firewall.$zone.network='wanusb'
+	for iface in wanusb wanusbeth wwan; do
+		uci -q del_list firewall.$zone.network="$iface"
+		uci add_list firewall.$zone.network="$iface"
+	done
 	uci commit firewall
 fi
 
