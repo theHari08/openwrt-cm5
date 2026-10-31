@@ -8,10 +8,13 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | --- | --- |
 | lan | eth1 (2.5GbE, RTL8156 on internal USB), br-lan 192.168.50.1/24, DHCP .100-.249 |
 | wan | eth0 (1GbE, RP1), DHCP client, [mwan3](https://openwrt.org/docs/guide-user/network/wan/multiwan/mwan3) primary |
-| wanusb | usb0 (Android USB tethering), DHCP client, mwan3 backup |
+| Backup uplinks | Used by mwan3 in this order when wan has no internet: `wanusb` = usb0 (Android USB tethering), `wanusbeth` = eth2 (iPhone USB tethering, a USB Ethernet adapter or an LTE stick in HiLink mode), `wwan` = an LTE modem in QMI or MBIM mode. See [Backup uplinks](#backup-uplinks) |
 | IPv6 | Off: wan6 exists with `auto=0`, no RA/DHCPv6 on lan |
-| Firewall | Normal router: wan, wan6 and wanusb NATed, inbound rejected; manage from lan only |
-| Login | No root password and no SSH key until set in LuCI |
+| Firewall | Normal router: wan, wan6 and all backup uplinks NATed, inbound rejected; manage from lan only |
+| Login | LuCI over HTTP; no root password until set in LuCI |
+| SSH | Off. Turn it on in LuCI after first boot (see [After installing](#after-installing)) |
+| SQM | [Cake](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm) set up on eth0 but disabled until you enter your line speeds |
+| Traffic stats | nlbwmon keeps its database in `/etc/nlbwmon` on flash, so per-device usage survives reboots and sysupgrades. It writes once a day and stays small |
 | Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe) |
 | Power button | A short press of PSW does a clean poweroff; a press while off powers on |
 | Storage | [`75_grow_rootfs_part`](files/lib/preinit/75_grow_rootfs_part) grows partition 2 to the end of the eMMC before the overlay is created, so the f2fs overlay spans the whole eMMC (about 29 GB on a 32 GB CM5) |
@@ -26,6 +29,7 @@ The fan header and the RTC battery header are not used by default. See [Optional
 | --- | --- | --- |
 | [`build.sh`](build.sh) | Image Builder download/verify/extract, package list, build | yes |
 | [`files/`](files) | Files copied into the image (grow hook, board ports, router defaults, mwan3 config) | yes |
+| [`keys/`](keys) | OpenWrt's public GPG key that signs the release `sha256sums` | yes |
 | `imagebuilder-dl/<version>/` | Downloaded Image Builder archive and the release's `sha256sums` | no |
 | `imagebuilder-<version>/` | Extracted Image Builder | no |
 | `out/` | Output of the last build, emptied at the start of each run | no |
@@ -35,7 +39,7 @@ The fan header and the RTC battery header are not used by default. See [Optional
 
 On Fedora x86_64:
 
-    sudo dnf install make gcc perl python3 rsync wget unzip zstd tar gzip file curl mtools util-linux perl-FindBin perl-Time-Piece perl-IO-Compress perl-File-Compare perl-Thread-Queue perl-IPC-Cmd
+    sudo dnf install make gcc perl python3 rsync wget unzip zstd tar gzip file curl gnupg2 mtools util-linux perl-FindBin perl-Time-Piece perl-IO-Compress perl-File-Compare perl-Thread-Queue perl-IPC-Cmd
 
 On other distributions, install the equivalent packages. If anything is missing, the Image Builder's prerequisite check names it. You also need about 2 GB of free disk space and access to [downloads.openwrt.org](https://downloads.openwrt.org/releases/).
 
@@ -50,14 +54,14 @@ On other distributions, install the equivalent packages. If anything is missing,
 
 Each run does the following:
 
-1. Fetches the release's `sha256sums` once, into `imagebuilder-dl/<version>/`. The source is the [target download folder](https://downloads.openwrt.org/releases/25.12.6/targets/bcm27xx/bcm2712/) of that release.
+1. Fetches the release's `sha256sums` and its signature `sha256sums.asc` once, into `imagebuilder-dl/<version>/`. The source is the [target download folder](https://downloads.openwrt.org/releases/25.12.6/targets/bcm27xx/bcm2712/) of that release. On every run it checks the signature with `gpgv` against the keys in [`keys/`](keys). If the signature is bad or from an unknown key, it deletes both files and stops.
 2. Verifies the archive against `sha256sums`. It downloads the archive only if it is missing or corrupt. If a fresh download does not match, the run stops.
 3. Extracts the archive to `imagebuilder-<version>/` if that folder does not exist yet.
 4. Appends the Wi-Fi/BT-off and PCIe Gen3 lines to the boot `config.txt` once, and builds squashfs images only.
 5. Empties `out/` and runs `make image` with the package list, `files/`, `ROOTFS_PARTSIZE=512` and `EXTRA_IMAGE_NAME=cm5router`. The output goes to `out/`.
 6. With `--release`, saves the build to `releases/YYYY-MM-DD-HHMM/` and verifies the checksums there (see [Save a release](#save-a-release)).
 
-**Package list:** add packages to the existing `PACKAGES` list in [`build.sh`](build.sh); never replace the list. A leading `-` excludes a package; Wi-Fi and Attended Sysupgrade are excluded this way. Keep `mwan3`, `luci-app-mwan3` and the `kmod-usb-net-*` drivers, because the USB-tether failover depends on them. Also keep `kmod-gpio-button-hotplug`, which the power button needs.
+**Package list:** add packages to the existing `PACKAGES` list in [`build.sh`](build.sh); never replace the list. A leading `-` excludes a package; Wi-Fi and Attended Sysupgrade are excluded this way. Keep `mwan3`, `luci-app-mwan3`, the `kmod-usb-net-*` drivers, `usbmuxd`, `uqmi` and `umbim`, because the backup uplinks depend on them. Also keep `kmod-gpio-button-hotplug`, which the power button needs.
 
 **Check a build:**
 
@@ -74,6 +78,8 @@ In LuCI, go to System -> Backup / Flash Firmware and flash `out/*-squashfs-sysup
     ssh root@192.168.50.1 'sha256sum /tmp/up.img.gz; sysupgrade -T /tmp/up.img.gz && sysupgrade /tmp/up.img.gz'
 
 Compare the checksum with `out/sha256sums`. `sysupgrade -n` discards settings. The message "Partition layout has changed. Full image will be written." is expected: the grow hook runs again before your settings are restored.
+
+OpenWrt runs uci-defaults scripts again after a sysupgrade that keeps settings. [`90-router-defaults`](files/etc/uci-defaults/90-router-defaults) sets `system.@system[0].cm5router_defaults=1` the first time it runs, and does nothing if that marker is already set. So an upgrade never resets your LAN, SSH or other settings. The flip side is that new defaults in a newer image only reach an existing box after a factory reset, or if you add them by hand.
 
 ### Fresh flash over USB (erases the eMMC)
 
@@ -113,9 +119,24 @@ The eMMC is a new `usb` disk whose size matches your CM5's eMMC (16, 32 or 64 GB
 
 ### After installing
 
-1. Run `ssh-keygen -R 192.168.50.1` if your PC knew an older host key. The key changes after a fresh flash, `sysupgrade -n` or a factory reset.
-2. Log in with `ssh root@192.168.50.1`, or open http://192.168.50.1. Check that `dmesg | grep grow_rootfs` shows the grow, `df -h /overlay` shows almost the whole eMMC, and `mwan3 interfaces` shows wan online.
-3. Set the root password and add your SSH key in LuCI (System -> Administration).
+1. Open http://192.168.50.1 and set the root password when LuCI asks for it.
+2. **SSH is off by default.** To use it, go to System -> Administration -> SSH Access, tick **Enable Instance**, then Save & Apply. Add your public key under SSH-Keys, and consider turning off password login once the key works.
+3. **HTTPS is optional.** LuCI serves plain HTTP by default. To force HTTPS, go to System -> Administration -> HTTP(S) Access and tick **Redirect to HTTPS**. The certificate is self-signed, so the browser warns once.
+4. If you use SSH and your PC knew an older host key, run `ssh-keygen -R 192.168.50.1`. The key changes after a fresh flash, `sysupgrade -n` or a factory reset.
+5. Check that `dmesg | grep grow_rootfs` shows the grow, `df -h /overlay` shows almost the whole eMMC, and `mwan3 interfaces` shows wan online. Status -> Overview in LuCI shows the same.
+6. Optional: set up SQM in Network -> SQM QoS. Set download and upload to about 90% of your real line speed, tick Enable, then Save & Apply.
+
+## Backup uplinks
+
+When wan stops reaching the internet, mwan3 moves traffic to the first backup uplink that is online and moves it back when wan recovers. It checks each uplink by pinging 1.1.1.1, 8.8.8.8 and 9.9.9.9 every 5 seconds. Status -> MultiWAN Manager in LuCI shows which uplink is in use. More on USB uplinks in the OpenWrt wiki: [smartphone USB tethering](https://openwrt.org/docs/guide-user/network/wan/smartphone.usb.tethering) and [WWAN](https://openwrt.org/docs/guide-user/network/wan/wwan/start).
+
+| Uplink | Device | What to plug in | Setup |
+| --- | --- | --- | --- |
+| `wanusb` | usb0 | Android phone | Connect it by USB and turn on USB tethering |
+| `wanusbeth` | eth2 | iPhone, a USB Ethernet adapter, or an LTE stick in HiLink/router mode | iPhone: turn on Personal Hotspot, connect by USB, unlock it and tap **Trust**. `usbmuxd` pairs it and the pairing is kept across reboots and sysupgrades. Adapters and HiLink sticks need nothing |
+| `wwan` | wwan0 | LTE modem in QMI or MBIM mode | Auto-detected. If the carrier needs an APN or the SIM has a PIN, run `uci set network.wwan.apn='your.apn'` (and `network.wwan.pincode`), then `uci commit network; ifup wwan`. LuCI shows the `wwan` protocol as unsupported, but you can switch the interface to the QMI or MBIM protocol there and fill in the APN |
+
+eth2 is the next free Ethernet name. If you plug in more than one USB Ethernet device, only the one that comes up as eth2 is used as a backup uplink. See the [QMI/MBIM dongle guide](https://openwrt.org/docs/guide-user/network/wan/wwan/ltedongle) for modems that start in USB storage mode (`usb-modeswitch` is included).
 
 ## Optional hardware: fan and RTC battery
 
@@ -159,6 +180,7 @@ With a battery on the RTC header:
   - `imagebuilder-<version>/target/linux/bcm27xx/image/config.txt` exists.
   - `80_mount_root` (see [preinit and root mount](https://openwrt.org/docs/techref/preinit_mount)) and the "Partition layout has changed" full-image write still exist in the release's `base-files`.
   - If apk cannot select a package, the package was renamed; update the list.
+  - If the build stops because `sha256sums` is not signed by a key in `keys/`, OpenWrt has moved to a new signing key. Look up the new key on [OpenWrt's signatures page](https://openwrt.org/docs/guide-user/security/signatures), download it from [openwrt/keyring](https://github.com/openwrt/keyring) (`gpg/<key id>.asc`), and check its fingerprint against that page with `gpg --show-keys`. Then add it to `keys/`.
   - The release notes mention no config migrations you need to handle.
 - **Roll out:** build with `./build.sh --release <version>`, then on the box run `sysupgrade -T`, then sysupgrade. Run the checks above and test the failover by unplugging eth0. If anything fails, delete the new release folder and roll back.
 - **Avoid:** Attended Sysupgrade, which installs a stock image without the grow hook or the defaults. Also avoid upgrading every package with `apk upgrade` on the box: the overlay fills with duplicate copies, and kernel modules can stop matching the kernel.
@@ -174,7 +196,7 @@ After a successful build, this creates `releases/YYYY-MM-DD-HHMM/`. The folder n
 | `*-squashfs-factory.img.gz`, `*-squashfs-sysupgrade.img.gz` | The images |
 | `*.manifest` | Package list; the file names carry the OpenWrt version |
 | `sha256sums` | Checksums, verified after copying |
-| `build-inputs/` | `build.sh`, `files/` and `README.md` exactly as used for the build |
+| `build-inputs/` | `build.sh`, `files/`, `keys/` and `README.md` exactly as used for the build |
 
 The release is saved before it has been tested on the box. If testing fails, delete that folder.
 
@@ -194,6 +216,9 @@ To rebuild an old release, copy its `build-inputs/*` back into this folder, then
 - [OpenWrt Image Builder](https://openwrt.org/docs/guide-user/additional-software/imagebuilder)
 - [OpenWrt bcm27xx target](https://openwrt.org/docs/techref/targets/bcm27xx) and [25.12.6 downloads](https://downloads.openwrt.org/releases/25.12.6/targets/bcm27xx/bcm2712/)
 - [mwan3 multi-WAN](https://openwrt.org/docs/guide-user/network/wan/multiwan/mwan3)
+- [Smartphone USB tethering](https://openwrt.org/docs/guide-user/network/wan/smartphone.usb.tethering), [WWAN](https://openwrt.org/docs/guide-user/network/wan/wwan/start) and [QMI/MBIM dongles](https://openwrt.org/docs/guide-user/network/wan/wwan/ltedongle)
+- [SQM (Smart Queue Management)](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm)
+- [OpenWrt signing keys](https://openwrt.org/docs/guide-user/security/signatures) and [openwrt/keyring](https://github.com/openwrt/keyring)
 - [uci-defaults](https://openwrt.org/docs/guide-developer/uci-defaults)
 - [sysupgrade](https://openwrt.org/docs/guide-user/installation/sysupgrade.cli)
 - [Failsafe mode and factory reset](https://openwrt.org/docs/guide-user/troubleshooting/failsafe_and_factory_reset)
