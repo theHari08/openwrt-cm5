@@ -209,6 +209,12 @@ To rebuild an old release, copy its `build-inputs/*` back into this folder, then
 - **Restore an eMMC backup:** expose the eMMC with `rpiboot` (steps 2 and 3 of [Fresh flash over USB](#fresh-flash-over-usb-erases-the-emmc)), then run `zstd -dc emmc-backup.img.zst | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress`.
 - **Boot stops at "Waiting for root device PARTUUID=...":** the MBR disk ID does not match `cmdline.txt`. This can happen after repartitioning the eMMC with other tools. Expose the eMMC with `rpiboot` as above, then run `sudo sfdisk --disk-id /dev/sdX 0x<id from partuuid.txt>`. `partuuid.txt` is on the boot partition.
 
+## License
+
+The contents of this repository (`build.sh`, `files/` and the documentation) are licensed under the [GNU General Public License v2.0 only](LICENSE) (`SPDX-License-Identifier: GPL-2.0-only`), the same license as the OpenWrt core they plug into. The OpenWrt public key in [`keys/`](keys) is published by OpenWrt in [openwrt/keyring](https://github.com/openwrt/keyring) and is included unchanged, so that the release checksums can be verified.
+
+The images that `build.sh` produces are made of OpenWrt and its packages, which keep their own licenses, most of them GPL. If you publish those images, also make the matching source available. For an Image Builder build, that is the OpenWrt release you built from (for example [25.12.6](https://downloads.openwrt.org/releases/25.12.6/)) and its package feeds.
+
 ## References
 
 - [Waveshare CM5-DUAL-ETH-BOX-B wiki](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B)

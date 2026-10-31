@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
 # Grow the root partition to the end of the disk before mount_root creates the
 # overlay, so rootfs_data (the writable overlay) spans the whole disk.
 #

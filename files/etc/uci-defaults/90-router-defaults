@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
 # Router defaults for the CM5-DUAL-ETH-BOX-B. Runs on first boot and after
 # every factory reset.
 #   eth1 (2.5GbE) = lan, 192.168.50.1/24, DHCP server

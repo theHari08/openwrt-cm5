@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
 # Build the custom OpenWrt squashfs router image for the
 # Waveshare CM5-DUAL-ETH-BOX-B with the official Image Builder.
 #

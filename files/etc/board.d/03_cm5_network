@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # CM5-DUAL-ETH-BOX-B: the 2.5GbE port (eth1) is lan and the 1GbE port (eth0)
 # is wan. The stock bcm27xx board script only knows eth0 as lan, which also
