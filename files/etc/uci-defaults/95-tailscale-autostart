@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Tailscale only runs for those who set it up. Its state file appears the first
+# time tailscaled runs and is kept across sysupgrades, so this runs on first boot
+# (no state file: disabled) and again after every sysupgrade (state kept: enabled).
+# Turn it on in LuCI -> System -> Startup -> tailscale, then run `tailscale up`.
+
+[ -x /etc/init.d/tailscale ] || exit 0
+
+if [ -s /etc/tailscale/tailscaled.state ]; then
+	/etc/init.d/tailscale enable
+else
+	/etc/init.d/tailscale disable
+fi
+
+exit 0
