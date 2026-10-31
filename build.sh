@@ -88,10 +88,11 @@ else
 	mv "$IB.tmp" "$IB"
 fi
 
-# Boot partition: Wi-Fi/BT off in hardware, M.2 slot at PCIe Gen3, and the CM5's
-# USB 2.0 OTG controller in host mode, which drives the box's USB 2.0 Type-A port
+# Boot partition: Wi-Fi/BT off in hardware, M.2 slot at PCIe Gen3, the CM5's
+# USB 2.0 OTG controller in host mode (drives the box's USB 2.0 Type-A port), and
+# the PWM fan header on (harmless without a fan)
 CFG="$IB/target/linux/bcm27xx/image/config.txt"
-for line in dtoverlay=disable-wifi-pi5 dtoverlay=disable-bt-pi5 dtparam=pciex1_gen=3 dtoverlay=dwc2,dr_mode=host; do
+for line in dtoverlay=disable-wifi-pi5 dtoverlay=disable-bt-pi5 dtparam=pciex1_gen=3 dtoverlay=dwc2,dr_mode=host dtparam=cooling_fan=on; do
 	grep -qx "$line" "$CFG" || echo "$line" >> "$CFG"
 done
 
