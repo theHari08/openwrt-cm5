@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Mount NVMe and USB storage automatically:
+#   NVMe        -> /mnt/nvme   (more partitions: /mnt/nvme-2, /mnt/nvme-3, ...)
+#   USB drives  -> /mnt/usb0, /mnt/usb1, ... in the order they are plugged in
+#                  (more partitions on one drive: /mnt/usb0-2, ...)
+# A drive with an enabled fstab entry (LuCI -> System -> Mount Points) is left to
+# block-mount, which has already mounted it by the time this runs (10-mount).
+
+STATE=/var/run/automount
+
+automount_kind() {
+	case "$1" in
+	nvme*) echo nvme ;;
+	sd*) readlink -f "/sys/class/block/$1" | grep -q /usb && echo usb ;;
+	esac
+}
+
+automount_add() {
+	local disk kind partn type fstype opts base idx mp
+
+	grep -q "^/dev/$DEVNAME " /proc/mounts && return 0
+
+	if [ "$DEVTYPE" = partition ]; then
+		disk="$(basename "$(readlink -f "/sys/class/block/$DEVNAME/..")")"
+		partn="$(cat "/sys/class/block/$DEVNAME/partition")"
+	else
+		disk="$DEVNAME"
+		partn=1
+	fi
+	kind="$(automount_kind "$disk")"
+	[ -n "$kind" ] || return 0
+
+	type="$(block info "/dev/$DEVNAME" | sed -n 's/.* TYPE="\([^"]*\)".*/\1/p')"
+	case "$type" in
+	ext2|ext3|ext4|f2fs) fstype="$type"; opts=noatime ;;
+	vfat) fstype=vfat; opts=noatime,utf8 ;;
+	exfat) fstype=exfat; opts=noatime ;;
+	ntfs) fstype=ntfs3; opts=noatime ;;
+	*) return 0 ;;
+	esac
+
+	mkdir -p "$STATE"
+	lock "$STATE.lock"
+	if [ "$kind" = nvme ]; then
+		base=/mnt/nvme
+	else
+		idx="$(cat "$STATE/disk.$disk" 2>/dev/null)"
+		if [ -z "$idx" ]; then
+			idx=0
+			while [ -e "$STATE/usb$idx" ]; do idx=$((idx + 1)); done
+			echo "$disk" > "$STATE/usb$idx"
+			echo "$idx" > "$STATE/disk.$disk"
+		fi
+		base="/mnt/usb$idx"
+	fi
+	lock -u "$STATE.lock"
+
+	if [ "$partn" -gt 1 ]; then
+		mp="$base-$partn"
+	else
+		mp="$base"
+	fi
+	mkdir -p "$mp"
+	if mount -t "$fstype" -o "$opts" "/dev/$DEVNAME" "$mp"; then
+		logger -t automount "mounted /dev/$DEVNAME ($type) on $mp"
+	else
+		rmdir "$mp" 2>/dev/null
+		logger -t automount "could not mount /dev/$DEVNAME ($type)"
+	fi
+}
+
+automount_remove() {
+	local mp idx
+
+	mp="$(awk -v dev="/dev/$DEVNAME" '$1 == dev { print $2; exit }' /proc/mounts)"
+	case "$mp" in
+	/mnt/nvme*|/mnt/usb*)
+		umount -l "$mp" && rmdir "$mp" 2>/dev/null
+		logger -t automount "unmounted $mp"
+		;;
+	esac
+
+	if [ "$DEVTYPE" = disk ] && [ -f "$STATE/disk.$DEVNAME" ]; then
+		idx="$(cat "$STATE/disk.$DEVNAME")"
+		rm -f "$STATE/disk.$DEVNAME" "$STATE/usb$idx"
+	fi
+}
+
+case "$DEVTYPE" in
+disk|partition) ;;
+*) exit 0 ;;
+esac
+
+case "$ACTION" in
+add) automount_add ;;
+remove) automount_remove ;;
+esac
