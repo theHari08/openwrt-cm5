@@ -86,6 +86,7 @@ PACKAGES="
 	kmod-fs-vfat kmod-hwmon-pwmfan kmod-i2c-bcm2835 kmod-i2c-brcmstb kmod-i2c-designware-platform
 	kmod-nft-offload kmod-nls-cp437 kmod-nls-iso8859-1 kmod-r8169 kmod-sound-arm-bcm2835
 	kmod-sound-core kmod-spi-bcm2835 kmod-spi-dw-mmio kmod-thermal kmod-usb-hid
+	kmod-gpio-button-hotplug
 	kmod-usb-net-lan78xx kmod-usb-net-rtl8152 libc libgcc libustream-mbedtls logd mkf2fs mtd
 	netifd nftables odhcp6c odhcpd-ipv6only partx-utils ppp ppp-mod-pppoe procd-ujail uci
 	uclient-fetch urandom-seed
