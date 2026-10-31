@@ -122,6 +122,14 @@ uci set system.led_wan.trigger='netdev'
 uci set system.led_wan.dev='eth0'
 uci set system.led_wan.mode='link tx rx'
 
+# --- DNS: Cloudflare next to whatever the uplink hands out, so names still
+# resolve when the active backup uplink cannot reach the wan's DNS servers ---
+uci -q del_list dhcp.@dnsmasq[0].server='1.1.1.1'
+uci -q del_list dhcp.@dnsmasq[0].server='1.0.0.1'
+uci add_list dhcp.@dnsmasq[0].server='1.1.1.1'
+uci add_list dhcp.@dnsmasq[0].server='1.0.0.1'
+uci commit dhcp
+
 # --- UPnP/NAT-PMP installed but off: LuCI -> Services -> UPnP IGD & PCP ---
 if [ -f /etc/config/upnpd ]; then
 	uci set upnpd.config.enabled='0'
