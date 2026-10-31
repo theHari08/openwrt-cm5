@@ -20,14 +20,14 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | Status LED | Green on with the wan link and blinking with wan traffic. Green blinking with the backup uplink's traffic when only a backup has internet. **Red fast blink when no uplink has internet.** Driven by mwan3's tracking ([`cm5-status-led`](files/usr/libexec/cm5-status-led)) |
 | UPnP / NAT-PMP | Installed but off. Turn it on in Services -> UPnP IGD & PCP if a console or app needs it |
 | Tailscale | Installed but not started. See [Tailscale](#tailscale) |
-| Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe), and the CM5's USB 2.0 OTG controller in host mode (`dtoverlay=dwc2,dr_mode=host`) |
+| Boot config | Wi-Fi and Bluetooth disabled ([`dtoverlay`](https://www.raspberrypi.com/documentation/computers/config_txt.html)), M.2 slot at PCIe Gen3 as in the [Waveshare NVMe guide](https://docs.waveshare.com/CM5-DUAL-ETH-BOX-B-Tutorials-NVMe), the CM5's USB 2.0 OTG controller in host mode (`dtoverlay=dwc2,dr_mode=host`), and the PWM fan header on (`dtparam=cooling_fan=on`) |
 | USB ports | The blue USB 3.0 port is on the RP1's first USB controller. The 2.5GbE NIC (eth1) is soldered to the second one. The black USB 2.0 port is wired through a USB switch to the CM5's own USB 2.0 OTG controller, which is also what the USB-C port uses for flashing in BOOT mode. OpenWrt leaves that controller off, so the image turns it on in host mode with `kmod-usb-dwc2`. Without that, the black port gives no power and sees nothing |
 | Power button | A short press of PSW does a clean poweroff; a press while off powers on |
 | Storage | [`75_grow_rootfs_part`](files/lib/preinit/75_grow_rootfs_part) grows partition 2 to the end of the eMMC before the overlay is created, so the f2fs overlay spans the whole eMMC (about 29 GB on a 32 GB CM5) |
 
 The router defaults are set by [`90-router-defaults`](files/etc/uci-defaults/90-router-defaults), a [uci-defaults](https://openwrt.org/docs/guide-developer/uci-defaults) script. [`03_cm5_network`](files/etc/board.d/03_cm5_network) describes eth1 as lan and eth0 as wan in `/etc/board.json`, which LuCI's port status reads. The failover policy is in [`files/etc/config/mwan3`](files/etc/config/mwan3).
 
-The fan header and the RTC battery header are not used by default. See [Optional hardware](#optional-hardware-fan-and-rtc-battery).
+The fan header and the RTC are ready for a fan or a backup battery, with nothing to set up. See [Fan and RTC battery](#fan-and-rtc-battery).
 
 ## Layout
 
@@ -63,7 +63,7 @@ Each run does the following:
 1. Fetches the release's `sha256sums` and its signature `sha256sums.asc` once, into `imagebuilder-dl/<version>/`. The source is the [target download folder](https://downloads.openwrt.org/releases/25.12.6/targets/bcm27xx/bcm2712/) of that release. On every run it checks the signature with `gpgv` against the keys in [`keys/`](keys). If the signature is bad or from an unknown key, it deletes both files and stops.
 2. Verifies the archive against `sha256sums`. It downloads the archive only if it is missing or corrupt. If a fresh download does not match, the run stops.
 3. Extracts the archive to `imagebuilder-<version>/` if that folder does not exist yet.
-4. Appends the Wi-Fi/BT-off, PCIe Gen3 and USB 2.0 host-mode lines to the boot `config.txt` once, and builds squashfs images only.
+4. Appends the Wi-Fi/BT-off, PCIe Gen3, USB 2.0 host-mode and fan lines to the boot `config.txt` once, and builds squashfs images only.
 5. Empties `out/` and runs `make image` with the package list, `files/`, `ROOTFS_PARTSIZE=512` and `EXTRA_IMAGE_NAME=cm5router`. The output goes to `out/`.
 6. With `--release`, saves the build to `releases/YYYY-MM-DD-HHMM/` and verifies the checksums there (see [Save a release](#save-a-release)).
 
@@ -171,39 +171,29 @@ Tailscale is installed but does not run until you set it up, so it costs nothing
 
 [`95-tailscale-autostart`](files/etc/uci-defaults/95-tailscale-autostart) runs on first boot and again after every sysupgrade. It keeps Tailscale enabled once its state file exists (the file is kept across sysupgrades), and off otherwise.
 
-## Optional hardware: fan and RTC battery
+## Fan and RTC battery
 
-Both headers are left alone by default, because the reference box has neither a fan nor an RTC battery. The steps below are untested on that box.
-
-Settings go in `/boot/config.txt` on the box, which lives on the boot partition rather than the overlay. So a factory reset keeps them, and a sysupgrade with keep settings carries them over. A fresh flash or `sysupgrade -n` replaces `config.txt` with the image's. To make a setting part of the image, add the line to the `for line in ...` list in [`build.sh`](build.sh) that appends to `config.txt`.
+Settings in this section go in `/boot/config.txt`, which lives on the boot partition rather than the overlay. So a factory reset keeps them, and a sysupgrade with keep settings carries them over. A fresh flash or `sysupgrade -n` replaces `config.txt` with the image's. To make a setting part of the image, add the line to the `for line in ...` list in [`build.sh`](build.sh) that appends to `config.txt`.
 
 ### Fan on the 4-pin header
 
-The image already has the `pwm-fan` driver, but the CM5 device tree keeps the fan switched off until it is enabled.
+The fan header is on by default (`dtparam=cooling_fan=on` and the `pwm-fan` driver). Without a fan connected, this does nothing.
 
-1. Add this line to `/boot/config.txt` and reboot:
-
-        dtparam=cooling_fan=on
-
-2. Check that the fan is registered: `cat /sys/class/thermal/cooling_device*/type` should list `pwm-fan`, and `cat /sys/class/hwmon/hwmon*/pwm1` shows its current speed (0-255).
+1. Connect a 5V PWM fan and boot. It spins up with the CPU temperature and stays off while the CPU is cool.
+2. Check that it is registered: `cat /sys/class/thermal/cooling_device*/type` lists `pwm-fan`, and `cat /sys/class/hwmon/hwmon*/pwm1` shows its current speed (0-255).
 3. Optionally tune when it spins up with `fan_temp0` ... `fan_temp3`, plus the matching `_speed` and `_hyst` parameters (temperatures in millidegrees Celsius, speeds 0-255). See the [config.txt documentation](https://www.raspberrypi.com/documentation/computers/config_txt.html).
 
 ### RTC battery
 
-The CM5 has a real-time clock, which OpenWrt already uses as `/dev/rtc0`. Without a battery, the clock resets whenever power is removed. At boot, `dmesg | grep rtc` then shows 1970, and the time stays wrong until NTP sets it once wan is up.
+The CM5 has a real-time clock, which OpenWrt uses as `/dev/rtc0`. Without a battery, the clock resets whenever power is removed. At boot, `dmesg | grep rtc` then shows 1970, and the time stays wrong until NTP sets it once an uplink is up.
 
-With a battery on the RTC header:
+[`20-rtc`](files/etc/hotplug.d/ntp/20-rtc) saves the time to the RTC every time NTP reports a valid time. OpenWrt's `sysfixtime` otherwise writes it only at a clean shutdown. With a battery on the RTC header, the clock is therefore right after a power cut too. Without a battery, the hook is harmless.
 
-1. **Rechargeable cell only** (for example a Panasonic ML-series lithium manganese cell): enable trickle charging in `/boot/config.txt` and reboot. Never enable this for a non-rechargeable coin cell.
+- **Rechargeable cell only** (for example a lithium manganese ML-series cell): enable trickle charging in `/boot/config.txt` and reboot. Never enable this for a non-rechargeable coin cell.
 
         dtparam=rtc_bbat_vchg=3000000
 
-2. Keep the RTC in step with NTP. OpenWrt's `sysfixtime` reads the RTC at boot but only writes it at a clean shutdown or reboot. A hotplug script that writes it each time NTP reports a valid time keeps it correct after power cuts as well. Create `/etc/hotplug.d/ntp/20-rtc` on the box, or `files/etc/hotplug.d/ntp/20-rtc` here to build it into the image:
-
-        [ "$ACTION" = "stratum" ] || exit 0
-        hwclock -w -u
-
-3. Check: remove power for a minute and boot with wan unplugged. `date` should show the right time, and `dmesg | grep rtc` should no longer show 1970.
+- Check: remove power for a minute and boot with wan unplugged. `date` should show the right time, and `dmesg | grep rtc` should no longer show 1970.
 
 ## Updating
 
