@@ -9,7 +9,8 @@
 # The Image Builder is kept in this folder, one copy per release:
 #   imagebuilder-dl/<version>/   the downloaded archive + the release's sha256sums
 #   imagebuilder-<version>/      the extracted Image Builder
-# Each run verifies the archive against sha256sums; download and extraction
+# Each run checks the GPG signature on sha256sums against the OpenWrt keys in
+# keys/, then verifies the archive against sha256sums; download and extraction
 # are skipped when already done.
 # Output: out/*-squashfs-factory.img.gz (flash) and *-squashfs-sysupgrade.img.gz
 set -e
@@ -43,9 +44,23 @@ verify_archive() {
 		(cd "$DL" && grep " \*\?$ARCHIVE\$" sha256sums | sha256sum -c --status -)
 }
 
-# Image Builder: download if missing or corrupt, verify, extract if missing
+# sha256sums: fetch it with its signature and check it against OpenWrt's keys
 mkdir -p "$DL"
 [ -s "$DL/sha256sums" ] || curl -fsSL -o "$DL/sha256sums" "$URL/sha256sums"
+[ -s "$DL/sha256sums.asc" ] || curl -fsSL -o "$DL/sha256sums.asc" "$URL/sha256sums.asc"
+GNUPG_TMP="$(mktemp -d)"
+gpg --homedir "$GNUPG_TMP" --quiet --import "$HERE"/keys/*.asc 2>/dev/null
+gpg --homedir "$GNUPG_TMP" --export > "$DL/openwrt-keys.gpg"
+rm -rf "$GNUPG_TMP"
+if gpgv --keyring "$DL/openwrt-keys.gpg" "$DL/sha256sums.asc" "$DL/sha256sums" 2>/dev/null; then
+	echo "Image Builder $VERSION: sha256sums signature verified"
+else
+	echo "Image Builder $VERSION: sha256sums is not signed by a key in keys/, deleting it" >&2
+	rm -f "$DL/sha256sums" "$DL/sha256sums.asc"
+	exit 1
+fi
+
+# Image Builder: download if missing or corrupt, verify, extract if missing
 if verify_archive; then
 	echo "Image Builder $VERSION: archive verified, download skipped"
 else
@@ -124,6 +139,6 @@ if [ -e "$REL" ]; then
 fi
 mkdir -p "$REL/build-inputs"
 cp -p "$HERE"/out/*.img.gz "$HERE"/out/*.manifest "$HERE/out/sha256sums" "$REL/"
-cp -pr "$HERE/build.sh" "$HERE/files" "$HERE/README.md" "$REL/build-inputs/"
+cp -pr "$HERE/build.sh" "$HERE/files" "$HERE/keys" "$HERE/README.md" "$REL/build-inputs/"
 (cd "$REL" && sha256sum -c --ignore-missing --quiet sha256sums)
 echo "Saved release $REL"
