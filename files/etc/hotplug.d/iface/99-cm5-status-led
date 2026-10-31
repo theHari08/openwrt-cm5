@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Update the status LED when an uplink comes up or goes down, and when mwan3
+# marks one online (connected) or offline (disconnected).
+
+case "$ACTION" in
+connected|disconnected|ifup|ifdown)
+	/usr/libexec/cm5-status-led
+	;;
+esac

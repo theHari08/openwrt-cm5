@@ -1,0 +1,11 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Set the status LED once after boot, so it also turns red when no uplink ever
+# comes up and mwan3 has no change to report.
+
+START=99
+
+start() {
+	( sleep 90; /usr/libexec/cm5-status-led ) >/dev/null 2>&1 &
+}

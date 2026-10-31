@@ -1,0 +1,46 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Status LED for the CM5-DUAL-ETH-BOX-B, driven by mwan3's uplink tracking:
+#   internet through wan            -> green on with the wan link, blinking with wan traffic
+#   internet through a backup only  -> green blinking with that uplink's traffic
+#   no internet on any uplink       -> red fast blink
+# Called from /etc/hotplug.d/iface/99-cm5-status-led and once after boot.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+GREEN=/sys/class/leds/ACT
+RED=/sys/class/leds/PWR
+
+[ -d "$GREEN" ] && [ -d "$RED" ] || exit 0
+
+lock /var/run/cm5-status-led.lock
+
+active=""
+for iface in wan wanusb wanusbeth wwan; do
+	[ "$(cat "/var/run/mwan3track/$iface/STATUS" 2>/dev/null)" = online ] || continue
+	active="$iface"
+	break
+done
+
+if [ -n "$active" ]; then
+	dev="$(ifstatus "$active" 2>/dev/null | jsonfilter -e '@.l3_device')"
+	echo none > "$RED/trigger"
+	echo 0 > "$RED/brightness"
+	if [ -n "$dev" ]; then
+		echo netdev > "$GREEN/trigger"
+		echo "$dev" > "$GREEN/device_name"
+		echo 1 > "$GREEN/link"
+		echo 1 > "$GREEN/tx"
+		echo 1 > "$GREEN/rx"
+	else
+		echo default-on > "$GREEN/trigger"
+	fi
+else
+	echo none > "$GREEN/trigger"
+	echo 0 > "$GREEN/brightness"
+	echo timer > "$RED/trigger"
+	echo 100 > "$RED/delay_on"
+	echo 100 > "$RED/delay_off"
+fi
+
+lock -u /var/run/cm5-status-led.lock

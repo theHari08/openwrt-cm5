@@ -114,6 +114,14 @@ if [ -f /etc/config/nlbwmon ]; then
 	uci commit nlbwmon
 fi
 
+# --- status LED: ACT shows the wan link and blinks with wan traffic ---
+uci set system.led_wan=led
+uci set system.led_wan.name='WAN'
+uci set system.led_wan.sysfs='ACT'
+uci set system.led_wan.trigger='netdev'
+uci set system.led_wan.dev='eth0'
+uci set system.led_wan.mode='link tx rx'
+
 # --- UPnP/NAT-PMP installed but off: LuCI -> Services -> UPnP IGD & PCP ---
 if [ -f /etc/config/upnpd ]; then
 	uci set upnpd.config.enabled='0'
