@@ -16,7 +16,7 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | SQM | [Cake](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm) set up on eth0 but disabled until you enter your line speeds |
 | Traffic stats | nlbwmon keeps its database in `/etc/nlbwmon` on flash, so per-device usage survives reboots and sysupgrades. It writes once a day and stays small |
 | DNS | dnsmasq asks Cloudflare (1.1.1.1, 1.0.0.1) as well as the DNS servers the uplink hands out, so names still resolve while a backup uplink is in use |
-| Storage | NVMe and USB drives are mounted automatically at `/mnt/nvme`, `/mnt/usb0`, `/mnt/usb1`, ... See [USB and NVMe storage](#usb-and-nvme-storage) |
+| Storage | NVMe and USB drives are mounted automatically: NVMe at `/mnt/nvme`, USB drives under their label (e.g. `/mnt/Backup`). See [USB and NVMe storage](#usb-and-nvme-storage) |
 | Status LED | Green on with the wan link and blinking with wan traffic. Green blinking with the backup uplink's traffic when only a backup has internet. **Red fast blink when no uplink has internet.** Driven by mwan3's tracking ([`cm5-status-led`](files/usr/libexec/cm5-status-led)) |
 | UPnP / NAT-PMP | Installed but off. Turn it on in Services -> UPnP IGD & PCP if a console or app needs it |
 | Tailscale | Installed but not started. See [Tailscale](#tailscale) |
@@ -151,12 +151,15 @@ eth2 is the next free Ethernet name. If you plug in more than one USB Ethernet d
 | Drive | Mount point |
 | --- | --- |
 | NVMe in the M.2 slot | `/mnt/nvme`; further partitions at `/mnt/nvme-2`, `/mnt/nvme-3`, ... |
-| USB drives | `/mnt/usb0`, `/mnt/usb1`, ... in the order they are plugged in; further partitions on the same drive at `/mnt/usb0-2`, ... |
+| USB drive (each partition) with a filesystem label | `/mnt/<label>`, for example `/mnt/Backup` or `/mnt/My_Photos` |
+| USB drive with no label but a GPT partition name | `/mnt/<partition name>` |
+| USB drive with neither | `/mnt/usb0`, `/mnt/usb1`, ... in the order they are plugged in; further partitions on the same drive at `/mnt/usb0-2`, ... |
 
 Supported filesystems are ext2/3/4, f2fs, FAT, exFAT and NTFS. Anything else, including an empty or unformatted drive, is left alone, and so is the eMMC.
 
-- **USB names follow plug-in order.** The same stick can be `usb0` today and `usb1` after a reboot, depending on what else is plugged in. That is fine for copying files. For a drive that something depends on, such as backups or container data, add a mount point by UUID in LuCI (System -> Mount Points) with its own path. A drive with an enabled mount point there is mounted by OpenWrt's `block-mount` instead and left alone here. `/mnt/nvme` is always the same drive, since the box has only one M.2 slot.
-- **Unmount before unplugging** to avoid losing data: `umount /mnt/usb0`, or the Unmount button in System -> Mount Points.
+- **Give your USB drives a label.** A label travels with the drive, so it gets the same path every time, in either USB port and whatever else is plugged in. Set the label when formatting the drive on a PC, or rename the drive in the PC's file manager. Characters other than letters, digits, `.`, `_` and `-` become `_` (`My Photos` is mounted at `/mnt/My_Photos`). If two drives share a label, the second one gets `-2` (`/mnt/Backup-2`). `/mnt/nvme` never changes, since the box has only one M.2 slot.
+- **Unlabelled drives follow plug-in order.** Without a label or partition name, the same stick can be `usb0` today and `usb1` after a reboot. That is fine for copying files. For anything that depends on the path, label the drive, or add a mount point by UUID in LuCI (System -> Mount Points). A drive with an enabled mount point there is mounted by OpenWrt's `block-mount` instead and left alone here.
+- **Unmount before unplugging** to avoid losing data: `umount /mnt/Backup`, or the Unmount button in System -> Mount Points.
 - `logread | grep automount` shows what was mounted or skipped.
 
 ## Tailscale
