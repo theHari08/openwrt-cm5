@@ -15,6 +15,9 @@ Custom [OpenWrt](https://openwrt.org/) image for the [Waveshare CM5-DUAL-ETH-BOX
 | SSH | Off. Turn it on in LuCI after first boot (see [After installing](#after-installing)) |
 | SQM | [Cake](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm) set up on eth0 but disabled until you enter your line speeds |
 | Traffic stats | nlbwmon keeps its database in `/etc/nlbwmon` on flash, so per-device usage survives reboots and sysupgrades. It writes once a day and stays small |
+| Traffic totals | vnstat counts daily and monthly traffic on eth0, br-lan and the backup uplinks (usb0, eth2, wwan0), which shows mobile data use. Its database is in `/etc/vnstat` on flash and is kept across sysupgrades. LuCI -> Status -> vnStat Traffic Monitor |
+| Statistics graphs | collectd with LuCI -> Statistics: CPU, memory, temperature, storage, interfaces, connections, ping and SQM. Graph data is kept in RAM (`/tmp/rrd`) to spare the eMMC, so the graphs start fresh after a reboot. To keep them, set the data directory to a folder on `/mnt/nvme` in Statistics -> Setup |
+| Wake-on-LAN | Services -> Wake on LAN can wake a device on the lan by its MAC address |
 | DNS | dnsmasq asks Cloudflare (1.1.1.1, 1.0.0.1) as well as the DNS servers the uplink hands out, so names still resolve while a backup uplink is in use |
 | Storage | NVMe and USB drives are mounted automatically: NVMe at `/mnt/nvme`, USB drives under their label (e.g. `/mnt/Backup`). See [USB and NVMe storage](#usb-and-nvme-storage) |
 | Status LED | Green on with the wan link and blinking with wan traffic. Green blinking with the backup uplink's traffic when only a backup has internet. **Red fast blink when no uplink has internet.** Driven by mwan3's tracking ([`cm5-status-led`](files/usr/libexec/cm5-status-led)) |
@@ -67,7 +70,7 @@ Each run does the following:
 5. Empties `out/` and runs `make image` with the package list, `files/`, `ROOTFS_PARTSIZE=512` and `EXTRA_IMAGE_NAME=cm5router`. The output goes to `out/`.
 6. With `--release`, saves the build to `releases/YYYY-MM-DD-HHMM/` and verifies the checksums there (see [Save a release](#save-a-release)).
 
-**Package list:** add packages to the existing `PACKAGES` list in [`build.sh`](build.sh); never replace the list. A leading `-` excludes a package; Wi-Fi and Attended Sysupgrade are excluded this way. Keep `mwan3`, `luci-app-mwan3`, the `kmod-usb-net-*` drivers, `usbmuxd`, `uqmi` and `umbim`, because the backup uplinks depend on them. Also keep `kmod-gpio-button-hotplug`, which the power button needs.
+**Package list:** packages are added in [`build.sh`](build.sh) with `pkg` lines, grouped by purpose under a comment (base system, hardware, web interface, uplinks, VPN, storage, monitoring, tools). Add to the matching group, or start a new one; never replace the list. A leading `-` excludes a package; the exclusions for Wi-Fi and Attended Sysupgrade are the last group. Keep `mwan3`, `luci-app-mwan3`, the `kmod-usb-net-*` drivers, `usbmuxd`, `uqmi` and `umbim`, because the backup uplinks depend on them. Also keep `kmod-gpio-button-hotplug`, which the power button needs.
 
 **Check a build:**
 
