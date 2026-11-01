@@ -114,6 +114,18 @@ if [ -f /etc/config/nlbwmon ]; then
 	uci commit nlbwmon
 fi
 
+# --- vnstat: count wan, lan and the backup uplinks, database on flash ---
+# (its init script only watches listed interfaces, and the stock list is empty)
+if [ -f /etc/config/vnstat ] && [ -f /etc/vnstat.conf ]; then
+	mkdir -p /etc/vnstat
+	sed -i 's|^;*DatabaseDir .*|DatabaseDir "/etc/vnstat"|' /etc/vnstat.conf
+	uci -q delete vnstat.@vnstat[0].interface
+	for dev in eth0 br-lan usb0 eth2 wwan0; do
+		uci add_list vnstat.@vnstat[0].interface="$dev"
+	done
+	uci commit vnstat
+fi
+
 # --- status LED: ACT shows the wan link and blinks with wan traffic ---
 uci set system.led_wan=led
 uci set system.led_wan.name='WAN'
