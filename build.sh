@@ -99,31 +99,49 @@ done
 # squashfs images only
 sed -i 's/^CONFIG_TARGET_ROOTFS_EXT4FS=y$/# CONFIG_TARGET_ROOTFS_EXT4FS is not set/' "$IB/.config"
 
-PACKAGES="
-	apk-mbedtls base-files bcm27xx-gpu-fw bcm27xx-utils ca-bundle
-	dnsmasq dropbear e2fsprogs firewall4 fstools
-	kmod-fs-vfat kmod-hwmon-pwmfan kmod-i2c-bcm2835 kmod-i2c-brcmstb kmod-i2c-designware-platform
-	kmod-nft-offload kmod-nls-cp437 kmod-nls-iso8859-1 kmod-r8169 kmod-sound-arm-bcm2835
-	kmod-sound-core kmod-spi-bcm2835 kmod-spi-dw-mmio kmod-thermal kmod-usb-hid
-	kmod-gpio-button-hotplug kmod-usb-dwc2
-	kmod-usb-net-lan78xx kmod-usb-net-rtl8152 libc libgcc libustream-mbedtls logd mkf2fs mtd
-	netifd nftables odhcp6c odhcpd-ipv6only partx-utils ppp ppp-mod-pppoe procd-ujail uci
-	uclient-fetch urandom-seed
-	-kmod-brcmfmac -wpad-basic-mbedtls -cypress-firmware-43455-sdio -brcmfmac-nvram-43455-sdio
-	luci luci-ssl -luci-app-attendedsysupgrade
-	mwan3 luci-app-mwan3
-	kmod-wireguard wireguard-tools luci-proto-wireguard qrencode tailscale luci-app-tailscale-community kmod-tun
-	block-mount kmod-fs-ext4 resize2fs parted losetup lsblk nvme-cli smartmontools kmod-usb-storage
-	kmod-fs-exfat kmod-fs-ntfs3
-	luci-app-upnp
-	kmod-usb-net-rndis kmod-usb-net-cdc-ether kmod-usb-net-cdc-ncm kmod-usb-net-cdc-mbim
-	kmod-usb-net-qmi-wwan kmod-usb-net-huawei-cdc-ncm kmod-usb-net-ipheth kmod-usb-net-asix
-	kmod-usb-net-asix-ax88179 kmod-usb-net-rtl8150 kmod-usb-serial-option usb-modeswitch uqmi umbim
-	usbmuxd libimobiledevice-utils luci-proto-qmi luci-proto-mbim
-	sqm-scripts luci-app-sqm
-	nlbwmon luci-app-nlbwmon
-	htop iperf3 ethtool tcpdump curl
-"
+PACKAGES=""
+pkg() { PACKAGES="$PACKAGES $*"; }
+
+# base system, as in OpenWrt's rpi-5 profile
+pkg apk-mbedtls base-files bcm27xx-gpu-fw bcm27xx-utils ca-bundle dnsmasq dropbear e2fsprogs firewall4
+pkg fstools libc libgcc libustream-mbedtls logd mkf2fs mtd netifd nftables odhcp6c odhcpd-ipv6only
+pkg partx-utils ppp ppp-mod-pppoe procd-ujail uci uclient-fetch urandom-seed
+
+# hardware: CM5 board, 2.5GbE NIC, power button, USB 2.0 port, fan
+pkg kmod-fs-vfat kmod-hwmon-pwmfan kmod-i2c-bcm2835 kmod-i2c-brcmstb kmod-i2c-designware-platform
+pkg kmod-nft-offload kmod-nls-cp437 kmod-nls-iso8859-1 kmod-r8169 kmod-sound-arm-bcm2835 kmod-sound-core
+pkg kmod-spi-bcm2835 kmod-spi-dw-mmio kmod-thermal kmod-usb-hid kmod-usb-net-lan78xx kmod-usb-net-rtl8152
+pkg kmod-gpio-button-hotplug kmod-usb-dwc2
+
+# web interface and router features
+pkg luci luci-ssl luci-app-upnp sqm-scripts luci-app-sqm
+
+# failover and backup uplinks: phone tethering, USB Ethernet, LTE modems
+pkg mwan3 luci-app-mwan3
+pkg kmod-usb-net-rndis kmod-usb-net-cdc-ether kmod-usb-net-cdc-ncm kmod-usb-net-cdc-mbim
+pkg kmod-usb-net-qmi-wwan kmod-usb-net-huawei-cdc-ncm kmod-usb-net-ipheth kmod-usb-net-asix
+pkg kmod-usb-net-asix-ax88179 kmod-usb-net-rtl8150 kmod-usb-serial-option usb-modeswitch uqmi umbim
+pkg usbmuxd libimobiledevice-utils luci-proto-qmi luci-proto-mbim
+
+# VPN
+pkg kmod-wireguard wireguard-tools luci-proto-wireguard qrencode kmod-tun tailscale luci-app-tailscale-community
+
+# storage: automount, filesystems, disk tools
+pkg block-mount kmod-usb-storage kmod-fs-ext4 kmod-fs-exfat kmod-fs-ntfs3 resize2fs parted losetup lsblk
+pkg nvme-cli smartmontools
+
+# monitoring: per-device usage, per-interface totals, graphs
+pkg nlbwmon luci-app-nlbwmon vnstat2 luci-app-vnstat2 luci-app-statistics collectd-mod-rrdtool
+pkg collectd-mod-conntrack collectd-mod-cpu collectd-mod-cpufreq collectd-mod-df collectd-mod-disk
+pkg collectd-mod-exec collectd-mod-interface collectd-mod-load collectd-mod-memory collectd-mod-ping
+pkg collectd-mod-processes collectd-mod-sqm collectd-mod-thermal collectd-mod-uptime
+
+# tools
+pkg htop iperf3 ethtool tcpdump curl iputils-arping etherwake luci-app-wol
+
+# left out: onboard Wi-Fi (disabled in hardware), Attended Sysupgrade (would install a stock image)
+pkg -kmod-brcmfmac -wpad-basic-mbedtls -cypress-firmware-43455-sdio -brcmfmac-nvram-43455-sdio
+pkg -luci-app-attendedsysupgrade
 
 # start from an empty out/ so a release never picks up an older build
 rm -rf "$HERE/out"
